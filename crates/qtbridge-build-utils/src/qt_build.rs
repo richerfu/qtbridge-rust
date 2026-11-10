@@ -6,10 +6,15 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use qt_build_utils::{QtBuild, QtTool, QtToolQtPaths};
 
+mod target;
+use target::TargetQtInstallation;
+
 #[doc(hidden)]
 pub struct QtInstallation {
     pub qt_paths: QtToolQtPaths,
     qt_build: QtBuild,
+    target_qt: Option<TargetQtInstallation>,
+    target_is_apple: bool,
 }
 
 #[doc(hidden)]
@@ -17,16 +22,38 @@ impl Default for QtInstallation {
     fn default() -> Self {
         let qt = QtBuild::new(vec!["Core".to_owned()])
             .expect("Could not find Qt installation");
+        let target_qt = TargetQtInstallation::discover(&qt.version().to_string());
         let qt_paths = qt.qtpaths();
-        Self { qt_paths, qt_build: qt }
+        let target_os = std::env::var("CARGO_CFG_TARGET_OS")
+            .unwrap_or_else(|_| std::env::consts::OS.to_owned());
+        let target_is_apple = matches!(
+            target_os.as_str(), "macos" | "ios" | "tvos" | "watchos" | "visionos"
+        );
+        Self {
+            qt_paths,
+            qt_build: qt,
+            target_qt,
+            target_is_apple,
+        }
     }
 }
 
 #[doc(hidden)]
 impl QtInstallation {
+    // A host qtpaths may describe the host installation while qmake describes
+    // target headers and libraries. Keep native discovery unchanged.
+    fn query_target(&self, property: &str) -> String {
+        if let Some(qt) = &self.target_qt {
+            return qt.query(property);
+        }
+        self.qt_paths
+            .query(property)
+            .unwrap_or_else(|| panic!("qtpaths failed to query {property}"))
+    }
+
     pub fn include_dirs(&self, modules: impl IntoIterator<Item: Display>, add_private: bool) -> Vec<String> {
-        let qtbase_include_dir = PathBuf::from(self.qt_paths.query("QT_INSTALL_HEADERS").expect("qtpaths failed to query QT_INSTALL_HEADERS"));
-        let qt_version = self.qt_paths.query("QT_VERSION").expect("qtpaths failed to query QT_VERSION");
+        let qtbase_include_dir = PathBuf::from(self.query_target("QT_INSTALL_HEADERS"));
+        let qt_version = self.query_target("QT_VERSION");
 
         // With macOS framework installations/builds the header layout in each framework (eg. QtCore):
         //   Headers/                      public headers
@@ -40,7 +67,7 @@ impl QtInstallation {
         // - We still need to add QT_INSTALL_HEADERS in addition to framework header directories
         //   because some modules (e.g. QtQmlIntegration) ship only as plain include directories
         if self.is_qt_framework_installation() {
-            let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+            let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
             let frameworks_path = PathBuf::from(qt_libs_dir);
 
             let mut dirs: Vec<String> = modules.into_iter()
@@ -95,21 +122,23 @@ impl QtInstallation {
 
     fn set_platform_specific_flags(&self, builder: &mut cc::Build) {
         if self.is_qt_framework_installation() {
-            let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+            let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
             builder.flag(format!("-F{}", qt_libs_dir));
         }
     }
 
     fn is_qt_framework_installation(&self) -> bool {
-        if !cfg!(target_os = "macos") {
+        // Build dependencies run on the host, but frameworks belong to the
+        // target. This also handles cross-compilation to an Apple target.
+        if !self.target_is_apple {
             return false;
         }
-        let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+        let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
         PathBuf::from(qt_libs_dir).join("QtCore.framework").exists()
     }
 
     pub fn link_modules(&self, modules: impl IntoIterator<Item: Display>) {
-        let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+        let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
 
         if self.is_qt_framework_installation() {
             // On macOS Qt is typically installed as frameworks, not as plain libraries

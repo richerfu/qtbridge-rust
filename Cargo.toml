@@ -20,6 +20,7 @@ proc-macro2 = "1.0.95"
 quote = "1.0.40"
 syn = { version = "2.0.103", features = ["extra-traits", "full"] }
 qt-build-utils = ">= 0.10.0"
+which = "8"
 qt-version = { version = "0.1.4", features = ["qt_version_at_least_6_10"] }
 qtbridge-build-utils = { path = "crates/qtbridge-build-utils", version = "0.4.1" }
 qtbridge-gen = { path = "crates/qtbridge-gen", version = "0.4.1" }

@@ -130,6 +130,24 @@ export PATH=/Users/john_doe/dev/qt_build/qtbase/bin:$PATH
 export DYLD_FRAMEWORK_PATH=/Users/john_doe/dev/qt_build/qtbase/lib:$DYLD_FRAMEWORK_PATH
 ```
 
+### Cross-compilation
+
+QtBridge's build scripts and Qt tools run on the host, while headers and
+libraries must belong to the target Qt installation. Set `QMAKE` to a
+host-runnable target qmake or wrapper whose `-query` output describes that
+installation. Its host tool paths must also locate tools such as `moc` and
+`qtpaths`.
+
+When `QMAKE` is unset, cross builds also search `PATH` for a matching qmake,
+using the same order as `qt-build-utils`. Native builds keep their existing
+`qtpaths` discovery. Framework handling follows Cargo's target platform,
+independently of the platform running the build scripts.
+
+Configure the target C/C++ compiler, sysroot and Cargo linker separately for
+your SDK. Platform launchers, packaging and deployment belong to the
+application project. The experimental [OHOS integration example](https://github.com/richerfu/qtbridge-rust/tree/codex/ohos-qt-native-example)
+is maintained on a separate branch with its build and deployment instructions.
+
 ## Dependency
 
 QtBridge has a single crate with all public APIs:
