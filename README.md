@@ -62,6 +62,7 @@ To use this library, you need:
    - Linux (`x86_64`)
    - Windows (`x64`)
    - macOS (`arm64`) - experimental
+   - HarmonyOS / OHOS (`arm64-v8a`) - experimental, Qt 6.12+
 - **Rust and Cargo** (stable, version >= 1.88) from [rustup.rs](https://rustup.rs)
 - **C++ toolchain** (see [Qt platform requirements](https://doc.qt.io/qt-6/supported-platforms.html))
 - [**Qt 6**](#qt-installation)
@@ -129,6 +130,79 @@ On macOS, you need to add the binary path of the targeted Qt installation to
 export PATH=/Users/john_doe/dev/qt_build/qtbase/bin:$PATH
 export DYLD_FRAMEWORK_PATH=/Users/john_doe/dev/qt_build/qtbase/lib:$DYLD_FRAMEWORK_PATH
 ```
+
+## HarmonyOS / OHOS (experimental)
+
+The `hello_world` example can also be built as a standard Qt for HarmonyOS
+application. Qt supplies the `QAbilityStage`, `QAbility`, XComponent, platform
+plugin, and HAP packaging. A small native `main` calls the Rust static library
+on Qt's GUI thread; Rust owns the `QApp` and QML engine. No additional Ability
+framework is required.
+
+Use matching **Qt 6.12 or newer** host and HarmonyOS installations, including
+private headers, plus CMake 3.25+, Ninja, and the OHOS SDK from DevEco Studio.
+The initial example targets `arm64-v8a` (`aarch64-unknown-linux-ohos`). Qt's
+supported SDK/device configurations are documented in
+[Qt for HarmonyOS](https://doc.qt.io/qt-6/harmonyos.html).
+
+For macOS, with Qt and DevEco Studio installed, run from the repository root:
+
+```sh
+export QT_HOST_PATH=/path/to/Qt/6.12.0/macos
+export QT_OHOS_PATH=/path/to/Qt/6.12.0/harmonyos_arm64_v8a
+export OHOS_SDK_ROOT=/Applications/DevEco-Studio.app/Contents/sdk/default/openharmony
+export DEVECO_SDK_HOME=/Applications/DevEco-Studio.app/Contents/sdk
+export JAVA_HOME=/Applications/DevEco-Studio.app/Contents/jbr/Contents/Home
+export NODE_HOME=/Applications/DevEco-Studio.app/Contents/tools/node
+export QT_HARMONYOS_HVIGOR=/Applications/DevEco-Studio.app/Contents/tools/hvigor/bin/hvigorw
+export PATH=/Applications/DevEco-Studio.app/Contents/tools/node/bin:/Applications/DevEco-Studio.app/Contents/tools/ohpm/bin:$PATH
+
+rustup target add aarch64-unknown-linux-ohos
+"$QT_OHOS_PATH/bin/qt-cmake" -S apps/hello_world -B target/ohos-hello \
+    -G Ninja -DCMAKE_BUILD_TYPE=Release -DQT_HOST_PATH="$QT_HOST_PATH"
+cmake --build target/ohos-hello --target hello_world_make_hap
+```
+
+The example-local `apps/hello_world/ohos/QtBridgeOHOS.cmake` passes the SDK
+compiler, sysroot, and target Qt configuration to Cargo while keeping build
+scripts and procedural macros on the host. It also preserves CXX-Qt native
+initializers at the final link.
+`QApp::with_arguments` receives the launch arguments supplied by Qt's native
+entry, without relying on Rust executable startup.
+
+The native Rust library and its QML live in the independent Cargo project at
+`apps/hello_world/ohos`. Only OHOS builds use the target qmake metadata and
+native argument bridge. Desktop workspace builds keep their original demo
+sources, Cargo targets, Qt discovery, and framework linking behavior.
+
+Paths come from the Qt package and CMake toolchain. The source and build
+directories can be selected with the usual `-S` and `-B` options; generated
+Cargo, qmake, QML, and HAP files stay inside the selected build directory.
+No repository-specific SDK installation layout or path manager is required.
+
+The generated DevEco project is under `target/ohos-hello/harmonyos-build`.
+For emulator validation, use the unsigned HAP. Set `QTBRIDGE_DEVICE` to the
+emulator's `hdc list targets` connection key, then run:
+
+```sh
+hdc -t "$QTBRIDGE_DEVICE" install \
+    target/ohos-hello/harmonyos-build/entry/build/default/outputs/default/entry-default-unsigned.hap
+hdc -t "$QTBRIDGE_DEVICE" shell aa start \
+    -a QAbility -b org.qtproject.qtbridge.hello
+```
+
+Clicking **Hello World!** calls the Rust slot and changes the button to
+**Hello from Rust!**. QML import dependencies are scanned from a directory
+containing only staged QML files, so Rust source files are not deployed.
+
+Validated with Qt 6.12.0 on a HarmonyOS API 26 arm64 tablet emulator: unsigned
+HAP installation, native Qt startup, QML-to-Rust slot invocation, background /
+foreground state retention, and process restart. Qt's HarmonyOS support is a
+technology preview; this example does not establish full device coverage.
+
+An intermittent blank content frame was also observed on this emulator after
+a click; backgrounding and reopening the application restored the content.
+Rendering stability still needs further emulator and device validation.
 
 ## Dependency
 

@@ -6,13 +6,16 @@ use qtbridge_build_utils::qt_build::{QtInstallation, get_cxx_qt_lib_include_path
 
 fn main() {
 
-    let bridge_files = [
+    let mut bridge_files = vec![
         "src/core/qmetaobject/mod.rs",
         "src/core/qmetatype/mod.rs",
         "src/core/qmetatypeinterface/mod.rs",
         "src/core/qobject/mod.rs",
         "src/testlib/qsignalspy/mod.rs",
     ];
+    if std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("ohos") {
+        bridge_files.push("src/gui/qguiapplication/ohos.rs");
+    }
 
     let cpp_files = [
         "src/core/qmetatype/cpp/qmetatype.cpp",
@@ -29,7 +32,7 @@ fn main() {
     println!("cargo::metadata=include={}", include_path.display());
 
     let qt = QtInstallation::default();
-    for file in bridge_files {
+    for file in &bridge_files {
         println!("cargo::rerun-if-changed={file}");
     }
 

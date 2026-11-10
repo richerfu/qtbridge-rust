@@ -1,0 +1,22 @@
+# Copyright (C) 2026 The Qt Company Ltd.
+# SPDX-License-Identifier: LicenseRef-Qt-Commercial OR BSD-3-Clause
+
+[package]
+name = "hello_world"
+version = "0.1.0"
+edition = "2024"
+publish = false
+description = "QtBridge Hello World for OHOS native integration"
+
+[lib]
+crate-type = ["staticlib"]
+
+[dependencies]
+qtbridge = { path = "../../../crates/qtbridge" }
+
+# Keep the OHOS static library out of desktop workspace builds.
+[workspace]
+resolver = "2"
+
+[profile.release.build-override]
+opt-level = 3

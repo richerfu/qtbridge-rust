@@ -6,27 +6,47 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 use qt_build_utils::{QtBuild, QtTool, QtToolQtPaths};
 
+mod ohos;
+use ohos::OhosQtInstallation;
+
 #[doc(hidden)]
 pub struct QtInstallation {
     pub qt_paths: QtToolQtPaths,
     qt_build: QtBuild,
+    ohos_qt: Option<OhosQtInstallation>,
 }
 
 #[doc(hidden)]
 impl Default for QtInstallation {
     fn default() -> Self {
+        let ohos_qt = OhosQtInstallation::discover();
         let qt = QtBuild::new(vec!["Core".to_owned()])
             .expect("Could not find Qt installation");
         let qt_paths = qt.qtpaths();
-        Self { qt_paths, qt_build: qt }
+        Self {
+            qt_paths,
+            qt_build: qt,
+            ohos_qt,
+        }
     }
 }
 
 #[doc(hidden)]
 impl QtInstallation {
+    // Only OHOS uses target qmake metadata. Preserve qtpaths discovery for every
+    // other target, including existing non-OHOS cross-compilation setups.
+    fn query_target(&self, property: &str) -> String {
+        if let Some(qt) = &self.ohos_qt {
+            return qt.query(property);
+        }
+        self.qt_paths
+            .query(property)
+            .unwrap_or_else(|| panic!("qtpaths failed to query {property}"))
+    }
+
     pub fn include_dirs(&self, modules: impl IntoIterator<Item: Display>, add_private: bool) -> Vec<String> {
-        let qtbase_include_dir = PathBuf::from(self.qt_paths.query("QT_INSTALL_HEADERS").expect("qtpaths failed to query QT_INSTALL_HEADERS"));
-        let qt_version = self.qt_paths.query("QT_VERSION").expect("qtpaths failed to query QT_VERSION");
+        let qtbase_include_dir = PathBuf::from(self.query_target("QT_INSTALL_HEADERS"));
+        let qt_version = self.query_target("QT_VERSION");
 
         // With macOS framework installations/builds the header layout in each framework (eg. QtCore):
         //   Headers/                      public headers
@@ -40,7 +60,7 @@ impl QtInstallation {
         // - We still need to add QT_INSTALL_HEADERS in addition to framework header directories
         //   because some modules (e.g. QtQmlIntegration) ship only as plain include directories
         if self.is_qt_framework_installation() {
-            let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+            let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
             let frameworks_path = PathBuf::from(qt_libs_dir);
 
             let mut dirs: Vec<String> = modules.into_iter()
@@ -95,21 +115,23 @@ impl QtInstallation {
 
     fn set_platform_specific_flags(&self, builder: &mut cc::Build) {
         if self.is_qt_framework_installation() {
-            let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+            let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
             builder.flag(format!("-F{}", qt_libs_dir));
         }
     }
 
     fn is_qt_framework_installation(&self) -> bool {
-        if !cfg!(target_os = "macos") {
+        // Build dependencies run on the host. Exclude OHOS explicitly, leaving
+        // the existing framework detection unchanged for all other targets.
+        if self.ohos_qt.is_some() || !cfg!(target_os = "macos") {
             return false;
         }
-        let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+        let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
         PathBuf::from(qt_libs_dir).join("QtCore.framework").exists()
     }
 
     pub fn link_modules(&self, modules: impl IntoIterator<Item: Display>) {
-        let qt_libs_dir = self.qt_paths.query("QT_INSTALL_LIBS").expect("qtpaths failed to query QT_INSTALL_LIBS");
+        let qt_libs_dir = self.query_target("QT_INSTALL_LIBS");
 
         if self.is_qt_framework_installation() {
             // On macOS Qt is typically installed as frameworks, not as plain libraries

@@ -66,7 +66,23 @@ impl QApp {
     ///
     /// Must be called before any QML or GUI functionality is used.
     pub fn new() -> Self {
-        let app = QGuiApplication::new();
+        Self::from_application(QGuiApplication::new())
+    }
+
+    /// Creates an application with arguments supplied by a native launcher.
+    ///
+    /// The first argument is the application name. The list must be nonempty,
+    /// and arguments must contain no NUL bytes. Storage is owned by the application.
+    /// Like [`new`](Self::new), call this once on the Qt GUI thread on which
+    /// Qt's OHOS platform plugin calls the native main.
+    #[cfg(target_env = "ohos")]
+    pub fn with_arguments(arguments: &[Vec<u8>]) -> Self {
+        Self::from_application(
+            qtbridge_type_lib::gui::qguiapplication::new_with_arguments(arguments),
+        )
+    }
+
+    fn from_application(app: UniquePtr<QGuiApplication>) -> Self {
         crate::qmlprivate::call_qml_register_callbacks();
         let mut engine = QQmlApplicationEngine::new();
         // Clean up the registry in sync with the QML
